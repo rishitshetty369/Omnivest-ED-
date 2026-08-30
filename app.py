@@ -32,14 +32,14 @@ def append_to_user_csv(username, block_index, timestamp, tx):
     csv_file = get_user_csv_filename(username)
     file_exists = os.path.exists(csv_file)
     pf = tx.get('portfolio', {})
-    
+
     with open(csv_file, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         if not file_exists:
             writer.writerow([
                 "Block_Index", "Timestamp", "Tx_ID", "User", "Goal_Description",
                 "Monthly_SIP", "Target_Corpus", "Tenure_Years", "Projected_Maturity",
-                "Stocks_Pct", "Mutual_Funds_Pct", "Real_Estate_Pct", "Gold_Pct", "Crypto_BTC_Pct",
+                "Equity_Index_Pct", "Debt_Fixed_Income_Pct", "Gold_Pct", "REIT_InvIT_Pct", "Cash_Liquid_Pct",
                 "Risk_Level", "Block_Hash"
             ])
         writer.writerow([
@@ -52,11 +52,11 @@ def append_to_user_csv(username, block_index, timestamp, tx):
             tx.get('target_savings_goal'),
             tx.get('tenure_years'),
             tx.get('target_fund'),
-            pf.get('Stock_Market_Index', {}).get('pct', 0),
-            pf.get('Mutual_Funds', {}).get('pct', 0),
-            pf.get('Real_Estate_REITs', {}).get('pct', 0),
-            pf.get('Gold_Precious_Metals', {}).get('pct', 0),
-            pf.get('Cryptocurrency_BTC', {}).get('pct', 0),
+            pf.get('Equity_Index', {}).get('pct', 0),
+            pf.get('Debt_Fixed_Income', {}).get('pct', 0),
+            pf.get('Gold', {}).get('pct', 0),
+            pf.get('REITs_InvITs', {}).get('pct', 0),
+            pf.get('Cash_Liquid', {}).get('pct', 0),
             tx.get('risk_profile'),
             tx.get('block_hash', '')
         ])
@@ -120,11 +120,11 @@ class Blockchain:
             transactions=self.pending_transactions, previous_hash=self.get_latest_block().hash
         )
         new_block.mine_block(self.difficulty)
-        
+
         for tx in self.pending_transactions:
             tx['block_hash'] = new_block.hash
             append_to_user_csv(tx['user'], new_block.index, new_block.timestamp, tx)
-            
+
         self.chain.append(new_block)
         self.pending_transactions = []
         self.save_chain()
@@ -168,7 +168,14 @@ def get_market_prices():
     return jsonify({"status": "success", "market": live_data})
 
 @app.route('/')
-def home(): return render_template('index.html')
+def home():
+    html = render_template('index.html')
+    # Keep the existing template UI compatible while replacing the old aggressive terminology.
+    html = html.replace('Max-Gain', 'Balanced Growth')
+    html = html.replace('High-Growth Maximized Strategy', 'Balanced Growth Strategy (Illustrative)')
+    html = html.replace('Recalculate & Maximize Gains', 'Recalculate & Update Plan')
+    html = html.replace('Optimized Allocation Breakdown', 'Recommended Allocation Breakdown')
+    return html
 
 @app.route('/api/auth', methods=['POST'])
 def auth():
@@ -195,17 +202,17 @@ def current_session(): return jsonify({"user": session.get('user')})
 def analyze():
     if 'user' not in session: return jsonify({"status": "error"}), 401
     data = request.json or {}
-    
+
     mode = data.get('mode', 'goal')
     years = int(data.get('years', 5))
     statement = data.get('statement', '').strip().lower()
     input_val = float(data.get('input_val', 0) or 0)
 
     dest_base_costs = {
-        "italy": 9000, "switzerland": 13000, "singapore": 6500, 
+        "italy": 9000, "switzerland": 13000, "singapore": 6500,
         "japan": 9500, "dubai": 5500, "europe": 11000, "usa": 12000
     }
-    
+
     target_corpus = 0
     goal_title = "Custom Wealth Strategy"
 
@@ -220,11 +227,11 @@ def analyze():
         if target_corpus <= 0:
             target_corpus = max(input_val if input_val > 0 else 35000, 10000)
             goal_title = statement if statement else "Target Goal Portfolio"
-        
-        expected_rate = 0.145 # Stable deterministic high-yield rate
+
+        expected_rate = 0.145
         r = expected_rate / 12
         n = years * 12
-        monthly_sip = round(target_corpus / ( (((1 + r)**n - 1) / r) * (1 + r) ), 2)
+        monthly_sip = round(target_corpus / ((((1 + r)**n - 1) / r) * (1 + r)), 2)
         total_invested = round(monthly_sip * n, 2)
 
     elif mode == 'budget':
@@ -241,17 +248,18 @@ def analyze():
         expected_rate = 0.145
         r = expected_rate / 12
         n = years * 12
-        monthly_sip = round(target_corpus / ( (((1 + r)**n - 1) / r) * (1 + r) ), 2)
+        monthly_sip = round(target_corpus / ((((1 + r)**n - 1) / r) * (1 + r)), 2)
         total_invested = round(monthly_sip * n, 2)
         goal_title = "Fixed Corpus Target Builder"
 
-    # Deterministic Optimized Allocation Matrix (Ensures same inputs produce identical optimal weights)
+    # Project-aligned illustrative allocation from the Investment Example:
+    # Equity/Index 60%, Debt/Fixed Income 20%, Gold 10%, REITs/InvITs 5%, Cash/Liquid 5%.
     raw_weights = {
-        "Stock_Market_Index": {"pct": 40.0, "cagr": 15.0},
-        "Cryptocurrency_BTC": {"pct": 25.0, "cagr": 22.0},
-        "Mutual_Funds": {"pct": 15.0, "cagr": 12.5},
-        "Real_Estate_REITs": {"pct": 12.0, "cagr": 11.0},
-        "Gold_Precious_Metals": {"pct": 8.0, "cagr": 9.5}
+        "Equity_Index": {"pct": 60.0, "cagr": 12.0},
+        "Debt_Fixed_Income": {"pct": 20.0, "cagr": 7.0},
+        "Gold": {"pct": 10.0, "cagr": 8.0},
+        "REITs_InvITs": {"pct": 5.0, "cagr": 8.0},
+        "Cash_Liquid": {"pct": 5.0, "cagr": 4.0}
     }
 
     portfolio_detailed = {}
@@ -269,8 +277,8 @@ def analyze():
         "status": "success",
         "data": {
             "goal_identified": goal_title,
-            "risk_profile": "High-Growth Maximized Strategy",
-            "is_risky": True,
+            "risk_profile": "Balanced Growth Strategy (Illustrative)",
+            "is_risky": False,
             "tenure_years": years,
             "monthly_allocation": monthly_sip,
             "target_savings_goal": target_corpus,
@@ -279,7 +287,7 @@ def analyze():
             "estimated_maturity_value": target_corpus,
             "estimated_profit": round(target_corpus - total_invested, 2),
             "portfolio_breakdown": portfolio_detailed,
-            "ai_rationale": f"Deterministically optimized for maximum compounding returns over {years} years."
+            "ai_rationale": f"Illustrative diversified allocation aligned with OmniVest's project model for a {years}-year goal: 60% Equity/Index, 20% Debt/Fixed Income, 10% Gold, 5% REITs/InvITs and 5% Cash/Liquid assets."
         }
     })
 
@@ -287,10 +295,10 @@ def analyze():
 def execute():
     if 'user' not in session: return jsonify({"status": "error"}), 401
     data = request.json or {}; plan = data.get('plan', {}); u = session['user']
-    
+
     blockchain.add_transaction(
-        u, plan.get('goal_identified'), plan.get('monthly_allocation'), 
-        plan.get('target_savings_goal'), plan.get('estimated_maturity_value'), 
+        u, plan.get('goal_identified'), plan.get('monthly_allocation'),
+        plan.get('target_savings_goal'), plan.get('estimated_maturity_value'),
         plan.get('tenure_years'), plan.get('risk_profile'), plan.get('portfolio_breakdown')
     )
     block = blockchain.mine_pending_transactions()
